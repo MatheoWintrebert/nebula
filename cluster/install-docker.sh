@@ -5,7 +5,7 @@ set -euo pipefail
 VERSION=5:29.8.2-1~debian.13~trixie
 
 sudo apt-get update -q
-sudo apt-get install -yq ca-certificates curl
+sudo apt-get install -yq ca-certificates curl make
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<SRC

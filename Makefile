@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-HOST  ?= nebula.local
+HOST  ?= nebula.test
 
 .DEFAULT_GOAL := help
 .PHONY: help dev dev-down deploy status smoke backup restore clean

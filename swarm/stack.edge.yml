@@ -50,12 +50,12 @@ services:
         - traefik.http.services.noop.loadbalancer.server.port=9999
 
         # Outil d'administration : nom d'hote dedie, liste blanche IP puis mot de passe.
-        - traefik.http.routers.dashboard.rule=Host(`admin.nebula.local`)
+        - traefik.http.routers.dashboard.rule=Host(`admin.nebula.test`)
         - traefik.http.routers.dashboard.entrypoints=web
         - traefik.http.routers.dashboard.service=api@internal
         - traefik.http.routers.dashboard.priority=1000
         - traefik.http.routers.dashboard.middlewares=admin-ip@swarm,admin-auth@swarm
-        - traefik.http.routers.metrics.rule=Host(`admin.nebula.local`) && Path(`/metrics`)
+        - traefik.http.routers.metrics.rule=Host(`admin.nebula.test`) && Path(`/metrics`)
         - traefik.http.routers.metrics.entrypoints=web
         - traefik.http.routers.metrics.service=prometheus@internal
         - traefik.http.routers.metrics.priority=1001

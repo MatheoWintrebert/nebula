@@ -17,7 +17,7 @@ Images : `ghcr.io/matheowintrebert/nebula-<service>:<VERSION>-<sha7>`.
 ```bash
 make deploy TAG=1.0.0-a1b2c3d   # sur le manager (ou Actions > deploy)
 make status                     # quoi, quelle version, ou, combien
-make smoke HOST=nebula.local    # depuis le poste
+make smoke HOST=nebula.test    # depuis le poste
 ```
 
 Les secrets sont generes sur le manager par `scripts/secrets-init.sh` et ne

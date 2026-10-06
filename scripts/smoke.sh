@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Verifie la chaine complete : edge -> comptes -> publications -> bus -> worker.
-#   ./scripts/smoke.sh [hote]        (defaut : nebula.local)
+#   ./scripts/smoke.sh [hote]        (defaut : nebula.test)
 set -euo pipefail
-B="http://${1:-nebula.local}/api"
+B="http://${1:-nebula.test}/api"
 ok=0
 
 t() { printf '  %-40s' "$1"; shift; if "$@" >/dev/null 2>&1; then echo OK; else echo ECHEC; ok=1; fi; }
