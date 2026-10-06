@@ -48,7 +48,7 @@ services:
     environment: *db-client
     secrets: [db_user, db_password]
     networks: [edge_public, internal]
-    stop_grace_period: 10s
+    stop_grace_period: 20s
     deploy:
       <<: *stateless
       replicas: 3
@@ -72,7 +72,7 @@ services:
       AMQP_URL_FILE: /run/secrets/amqp_url
     secrets: [db_user, db_password, redis_url, amqp_url]
     networks: [edge_public, internal]
-    stop_grace_period: 10s
+    stop_grace_period: 20s
     deploy:
       <<: *stateless
       replicas: 3

@@ -16,6 +16,8 @@ services:
       - --providers.swarm.exposedByDefault=false
       - --providers.swarm.network=edge_public
       - --providers.swarm.refreshSeconds=5
+      # Un replica disparu doit echouer vite pour que le middleware retry essaie le suivant (defaut : 30 s).
+      - --serversTransport.forwardingTimeouts.dialTimeout=1s
       - --entryPoints.web.address=:80
       - --api.dashboard=true
       - --ping=true
