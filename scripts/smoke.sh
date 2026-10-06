@@ -21,12 +21,12 @@ t "lecture du fil"          curl -fsS "$B/fil"
 
 echo
 echo "== cache (la 2e lecture doit venir du cache)"
-for _ in 1 2; do curl -fsS "$B/fil" | sed -n 's/.*"source":"\([^"]*\)".*/  source : \1/p'; done
+for _ in 1 2; do curl -fsS "$B/fil" | grep -o '"source":"[^"]*"' | cut -d'"' -f4 | sed 's/^/  source : /'; done
 
 echo
 echo "== repartition (12 appels, le hostname doit varier)"
 for _ in $(seq 1 12); do
-  curl -fsS "$B/comptes/health" | sed -n 's/.*"host":"\([^"]*\)".*/\1/p'
+  curl -fsS "$B/comptes/health" | grep -o '"host":"[^"]*"' | cut -d'"' -f4
 done | sort | uniq -c
 
 echo

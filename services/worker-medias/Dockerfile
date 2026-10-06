@@ -13,6 +13,8 @@ ENV APP_VERSION=$APP_VERSION
 LABEL org.opencontainers.image.version=$APP_VERSION org.opencontainers.image.revision=$GIT_SHA
 COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
+# Un volume nomme neuf herite du proprietaire de ce dossier : sans cela /data est a root et le worker ne peut rien ecrire.
+RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=40s --retries=3 \
