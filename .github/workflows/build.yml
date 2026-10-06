@@ -13,11 +13,22 @@ permissions:
   packages: write
 
 jobs:
+  # Un dossier services/<nom>/ = une image : ajouter un service ne modifie pas ce fichier.
+  liste:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.ls.outputs.services }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: ls
+        run: echo "services=$(find services -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | jq -R -s -c 'split("\n")[:-1]')" >> "$GITHUB_OUTPUT"
+
   image:
+    needs: liste
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [comptes, publications, worker-medias]
+        service: ${{ fromJSON(needs.liste.outputs.services) }}
     steps:
       - uses: actions/checkout@v7
 

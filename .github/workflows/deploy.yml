@@ -28,10 +28,11 @@ jobs:
       - name: login registry (lecture seule)
         run: echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
 
-      - name: les images existent
+      - name: les images de la stack existent
         run: |
-          for s in comptes publications worker-medias; do
-            docker manifest inspect "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nebula-$s:$TAG" >/dev/null
+          export REGISTRY="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          for img in $(docker stack config -c swarm/stack.nebula.yml | grep -o "$REGISTRY/[^ ]*:$TAG" | sort -u); do
+            echo "$img"; docker manifest inspect "$img" >/dev/null
           done
 
       - name: deploy
