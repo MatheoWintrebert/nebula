@@ -22,4 +22,4 @@ backup: ## [manager] Sauvegarde la base dans ~/nebula-backups
 restore: ## [manager] Restaure : make restore FILE=~/nebula-backups/x.dump
 	./scripts/db-restore.sh $(FILE)
 clean: ## [manager] Retire la stack nebula (volumes conserves)
-	docker stack rm --detach=false nebula
+	docker stack rm nebula && until ! docker network inspect nebula_internal >/dev/null 2>&1; do sleep 1; done

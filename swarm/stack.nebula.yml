@@ -149,10 +149,10 @@ services:
     image: rabbitmq:4.3.6-alpine
     hostname: bus     # nom de noeud Erlang stable (rabbit@bus) : sinon les donnees du volume sont ignorees au redemarrage
     secrets:
-      - { source: rabbitmq_credentials, target: /etc/rabbitmq/conf.d/20-credentials.conf }
+      - { source: rabbitmq_users, target: /etc/rabbitmq/definitions/20-users.json }
     configs:
       - { source: rabbitmq_conf, target: /etc/rabbitmq/conf.d/10-nebula.conf }
-      - { source: rabbitmq_definitions, target: /etc/rabbitmq/definitions.json }
+      - { source: rabbitmq_topology, target: /etc/rabbitmq/definitions/10-topology.json }
     volumes: [bus_data:/var/lib/rabbitmq]
     networks: [internal]
     stop_grace_period: 30s
@@ -190,7 +190,7 @@ secrets:
   db_password: { external: true }
   redis_conf: { external: true }
   redis_url: { external: true }
-  rabbitmq_credentials: { external: true }
+  rabbitmq_users: { external: true }
   amqp_url: { external: true }
 
 # Les configs Swarm sont immuables : changer le fichier => incrementer le suffixe.
@@ -199,8 +199,8 @@ configs:
     name: nebula_db_init_v1
     file: ../db/init.sql
   rabbitmq_conf:
-    name: nebula_rabbitmq_conf_v1
+    name: nebula_rabbitmq_conf_v2
     file: ./bus/rabbitmq.conf
-  rabbitmq_definitions:
-    name: nebula_rabbitmq_definitions_v1
-    file: ./bus/definitions.json
+  rabbitmq_topology:
+    name: nebula_rabbitmq_topology_v1
+    file: ./bus/topology.json

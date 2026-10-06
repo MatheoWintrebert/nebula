@@ -28,9 +28,24 @@ if groupe redis_conf redis_url; then
   cree redis_url "redis://:$pw@cache:6379"
 fi
 
-if groupe rabbitmq_credentials amqp_url; then
+# RabbitMQ n'importe que des empreintes : sel de 4 octets + SHA-256(sel + mot de passe), en base64.
+utilisateurs_rabbitmq() {
+  PW=$1 python3 - <<'PY'
+import base64, hashlib, json, os
+sel = os.urandom(4)
+empreinte = base64.b64encode(sel + hashlib.sha256(sel + os.environ["PW"].encode()).digest()).decode()
+print(json.dumps({
+    "vhosts": [{"name": "/"}],
+    "users": [{"name": "nebula", "password_hash": empreinte,
+               "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": []}],
+    "permissions": [{"user": "nebula", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*"}],
+}))
+PY
+}
+
+if groupe rabbitmq_users amqp_url; then
   pw=$(alea)
-  cree rabbitmq_credentials "$(printf 'default_user = nebula\ndefault_pass = %s\n' "$pw")"
+  cree rabbitmq_users "$(utilisateurs_rabbitmq "$pw")"
   cree amqp_url "amqp://nebula:$pw@bus:5672"
 fi
 
