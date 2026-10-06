@@ -71,7 +71,7 @@ curl -s http://nebula.test/api/comptes/<id>     # la donnée sauvegardée est re
 ```bash
 # Proxmox : 3 VM Debian 13 (Cloud-Init) manager .239, worker1 .240, worker2 .241, passerelle 10.96.2.254
 for h in manager worker1 worker2; do ssh $h 'bash -s' < cluster/install-docker.sh; done   # Docker 29.8.2, MTU, journaux
-./cluster/swarm-bootstrap.sh                     # init, join, étiquettes, ingress MTU 1300, docker node ls
+./cluster/swarm-bootstrap.sh                     # init, join, étiquettes, ingress MTU 1300 ; idempotent (relancer = réparer)
 # Runner : GitHub > Settings > Actions > Runners > New (label nebula-manager) ; sudo ./svc.sh install && start
 # Après le 1er déploiement : ssh manager ln -sfn ~/actions-runner/_work/nebula/nebula ~/nebula
 # Secret de dépôt GHCR_PULL_TOKEN = PAT read:packages ; puis procédure 1

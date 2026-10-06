@@ -110,6 +110,7 @@ Répétition complète du 2026-10-06 sur le cluster réel, tag `1.0.0-884825c`.
 | 8 | image `-defect` : jamais saine, retour arrière automatique vers `1.0.0-884825c`, 147/147 requêtes OK pendant ce temps | retour arrière en **37 s** |
 | 9 | `docker kill` de Postgres : nouvelle tâche sur worker1, compte écrit avant présent, écritures reprises | **12 s** |
 | 10 | `traefik/whoami` routé sur `/api/notifications` (reçu en `/notifications`), 7 autres services intacts | **45 s** (pull compris) |
+| Reconstruction | Docker purgé et `/var/lib/docker` supprimé sur les 3 VM, puis procédure 6 seule : `install-docker.sh`, `swarm-bootstrap.sh`, workflow deploy (secrets régénérés), restauration de la sauvegarde gardée sur le poste. Compte 40 : 404 avant, présent après ; smoke OK. | deploy **282 s** (images re-téléchargées) |
 | Restauration | sauvegarde 12 Ko → `TRUNCATE` → 404 → restauration → compte et 677 publications revenus | restauration **7,7 s** |
 
 Problèmes trouvés et corrigés pendant la répétition :
@@ -119,3 +120,4 @@ Problèmes trouvés et corrigés pendant la répétition :
 - `deploy.sh` trop lent (vérification séquentielle des services).
 - `nebula.local` capturé par mDNS.
 - `docker stack rm --detach=false` qui ne rend jamais la main.
+- `swarm-bootstrap.sh` : `network rm ingress` rend la main avant la fin de la suppression, d'où un échec du `create` et un cluster sans ingress. Le script attend désormais la disparition du réseau, et toutes ses étapes sont idempotentes : le relancer répare une installation partielle (vérifié).
