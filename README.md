@@ -5,6 +5,7 @@ cluster Swarm de trois VM : 1 manager, 2 workers. Seul le port 80 du manager
 est publie (Traefik).
 
 ```
+docs/      architecture.md (schema, choix, limites), procedures.md, scenarios.md
 cluster/   construction des VM et du cluster depuis zero
 swarm/     stack.edge.yml (Traefik), stack.nebula.yml (7 services), config du bus
 scripts/   deploy, secrets, status, smoke, sauvegarde et restauration
