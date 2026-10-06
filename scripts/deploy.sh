@@ -13,5 +13,23 @@ docker network inspect edge_public >/dev/null 2>&1 ||
 ./scripts/secrets-init.sh
 
 docker stack deploy --detach=false -c swarm/stack.edge.yml edge
-docker stack deploy --detach=false --with-registry-auth -c swarm/stack.nebula.yml nebula
+DEBUT=$(date +%s)
+docker stack deploy --detach=true --with-registry-auth -c swarm/stack.nebula.yml nebula
+
+# --detach=false verifie les services un par un (~30 s chacun) : on attend plutot qu'ils
+# soient tous N/N ET qu'aucune mise a jour ne soit en cours (pendant un start-first, l'ancienne version affiche deja N/N).
+etats() {
+  docker service ls -q --filter label=com.docker.stack.namespace=nebula | xargs docker service inspect \
+    --format '{{.Spec.Name}} {{if .UpdateStatus}}{{.UpdateStatus.State}} {{.UpdateStatus.StartedAt.Unix}}{{end}}'
+}
+pret() {
+  docker service ls --filter label=com.docker.stack.namespace=nebula --format '{{.Replicas}}' |
+    awk -F'[/ ]' '$1 + 0 != $2 + 0 { ko = 1 } END { exit ko }' &&
+    ! etats | grep -qE ' (updating|rollback_started) '
+}
+for _ in $(seq 1 150); do pret && break; sleep 2; done
 ./scripts/status.sh
+pret || { echo "ECHEC : services incomplets apres 5 min" >&2; exit 1; }
+if etats | awk -v debut="$DEBUT" '$2 ~ /^rollback/ && $3 >= debut { print; ko = 1 } END { exit !ko }'; then
+  echo "ECHEC : mise a jour annulee par Swarm (retour arriere)" >&2; exit 1
+fi
