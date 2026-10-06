@@ -1,0 +1,38 @@
+# Deploiement declenche a la main (Actions > deploy > Run workflow), jamais a chaque commit.
+# S'execute sur le runner installe sur le manager : aucun port entrant a ouvrir.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag d'image deja publie (<VERSION>-<sha7>)"
+        required: true
+
+concurrency: deploy
+
+permissions:
+  contents: read
+
+jobs:
+  swarm:
+    runs-on: [self-hosted, nebula-manager]
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: format du tag
+        run: '[[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}$ ]]'
+
+      - uses: actions/checkout@v7
+
+      - name: login registry (lecture seule)
+        run: echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
+      - name: les images existent
+        run: |
+          for s in comptes publications worker-medias; do
+            docker manifest inspect "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nebula-$s:$TAG" >/dev/null
+          done
+
+      - name: deploy
+        run: ./scripts/deploy.sh "$TAG"

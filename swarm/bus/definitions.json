@@ -1,0 +1,12 @@
+{
+  "vhosts": [{ "name": "/" }],
+  "queues": [
+    { "name": "publications.erreurs", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
+  ],
+  "policies": [
+    {
+      "vhost": "/", "name": "publications-dlx", "pattern": "^publications$", "apply-to": "queues", "priority": 0,
+      "definition": { "dead-letter-exchange": "", "dead-letter-routing-key": "publications.erreurs" }
+    }
+  ]
+}

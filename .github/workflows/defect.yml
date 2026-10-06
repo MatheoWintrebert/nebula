@@ -1,0 +1,33 @@
+# Scenario 8 : publie une version volontairement defectueuse de comptes
+# (meme code, sonde de sante toujours en echec) pour demontrer le retour arriere.
+name: defect
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag sain de depart (<VERSION>-<sha7>)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  comptes:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - run: '[[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}$ ]]'
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          IMG="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nebula-comptes"
+          printf 'FROM %s:%s\nHEALTHCHECK --interval=5s --start-period=10s --retries=2 CMD ["false"]\n' "$IMG" "$TAG" |
+            docker build -t "$IMG:$TAG-defect" -
+          docker push "$IMG:$TAG-defect"
+          echo "### image defectueuse : \`$IMG:$TAG-defect\`" >> "$GITHUB_STEP_SUMMARY"

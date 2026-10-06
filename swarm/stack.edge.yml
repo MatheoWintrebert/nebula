@@ -1,0 +1,78 @@
+# ===========================================================================
+# Point d'entree HTTP : le SEUL port publie du cluster (80, sur le manager).
+#
+#   ./scripts/deploy.sh <tag>     (cree le reseau edge_public puis deploie)
+#
+# Chaque service applicatif declare son routage dans SES labels et reutilise
+# les middlewares definis ici (strip-api, health, retry) : ajouter un service
+# ne demande aucune modification de ce fichier.
+# ===========================================================================
+services:
+  traefik:
+    image: traefik:v3.7.13
+    command:
+      - --providers.swarm=true
+      - --providers.swarm.endpoint=unix:///var/run/docker.sock
+      - --providers.swarm.exposedByDefault=false
+      - --providers.swarm.network=edge_public
+      - --providers.swarm.refreshSeconds=5
+      - --entryPoints.web.address=:80
+      - --api.dashboard=true
+      - --ping=true
+      - --accesslog=true
+      - --metrics.prometheus=true
+      - --metrics.prometheus.manualrouting=true
+    ports:
+      # mode host : Traefik voit la vraie IP du client (journaux, liste blanche admin).
+      - { target: 80, published: 80, mode: host }
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    secrets: [traefik_users]
+    networks: [edge_public]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]   # le provider lit l'API du cluster
+      resources:
+        limits: { cpus: "0.50", memory: 128M }
+        reservations: { memory: 64M }
+      # stop-first : en mode host, deux taches ne peuvent pas tenir le port 80 en meme temps.
+      update_config: { order: stop-first, failure_action: rollback, monitor: 20s }
+      rollback_config: { order: stop-first }
+      labels:
+        - traefik.enable=true
+        # Swarm exige un port de service, meme pour les routeurs internes.
+        - traefik.http.services.noop.loadbalancer.server.port=9999
+
+        # Outil d'administration : nom d'hote dedie, liste blanche IP puis mot de passe.
+        - traefik.http.routers.dashboard.rule=Host(`admin.nebula.local`)
+        - traefik.http.routers.dashboard.entrypoints=web
+        - traefik.http.routers.dashboard.service=api@internal
+        - traefik.http.routers.dashboard.priority=1000
+        - traefik.http.routers.dashboard.middlewares=admin-ip@swarm,admin-auth@swarm
+        - traefik.http.routers.metrics.rule=Host(`admin.nebula.local`) && Path(`/metrics`)
+        - traefik.http.routers.metrics.entrypoints=web
+        - traefik.http.routers.metrics.service=prometheus@internal
+        - traefik.http.routers.metrics.priority=1001
+        - traefik.http.routers.metrics.middlewares=admin-ip@swarm,admin-auth@swarm
+        - traefik.http.middlewares.admin-auth.basicauth.usersfile=/run/secrets/traefik_users
+        - traefik.http.middlewares.admin-ip.ipallowlist.sourcerange=10.96.2.0/24,172.16.0.0/12,100.64.0.0/10
+
+        # Middlewares partages par tous les services applicatifs.
+        - traefik.http.middlewares.strip-api.stripprefix.prefixes=/api
+        - traefik.http.middlewares.health.replacepath.path=/health
+        - traefik.http.middlewares.retry.retry.attempts=3
+        - traefik.http.middlewares.retry.retry.initialinterval=100ms
+
+networks:
+  edge_public:
+    external: true
+
+secrets:
+  traefik_users:
+    external: true

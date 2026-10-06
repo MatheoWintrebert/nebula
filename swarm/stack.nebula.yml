@@ -1,0 +1,206 @@
+# ===========================================================================
+# NEBULA : services applicatifs et dependances d'infrastructure.
+#
+#   ./scripts/deploy.sh <tag>        (tag = <VERSION>-<sha7>, jamais latest)
+#
+# Conventions (ajouter un service = copier un bloc, rien d'autre a toucher) :
+#   - image   ${REGISTRY}/nebula-<service>:${TAG}
+#   - reseaux edge_public (seulement si routé par Traefik) + internal
+#   - route   /api/<service>...  ->  strip-api ; sante /api/<service>/health
+#   - deploy  <<: *stateless  (mise a jour progressive + retour arriere)
+# ===========================================================================
+
+x-stateless: &stateless
+  restart_policy: { condition: any, delay: 5s }
+  update_config:
+    parallelism: 1
+    delay: 5s
+    order: start-first        # le nouveau replica doit etre sain avant l'arret de l'ancien
+    failure_action: rollback
+    monitor: 30s
+    max_failure_ratio: 0
+  rollback_config:
+    parallelism: 1
+    order: start-first
+    monitor: 10s
+  placement:
+    constraints: [node.labels.nebula.db != true]   # la machine de la base lui reste reservee
+    preferences: [{ spread: node.id }]
+  resources:
+    limits: { cpus: "0.50", memory: 128M }
+    reservations: { memory: 48M }
+
+# Un seul replica sur un volume local : on arrete l'ancien AVANT de demarrer le nouveau.
+x-stateful: &stateful
+  replicas: 1
+  restart_policy: { condition: any, delay: 5s }
+  update_config: { order: stop-first, failure_action: rollback, monitor: 30s }
+
+x-db-client: &db-client
+  PGHOST: db
+  POSTGRES_DB: nebula
+  POSTGRES_USER_FILE: /run/secrets/db_user
+  POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+
+services:
+  comptes:
+    image: ${REGISTRY:?}/nebula-comptes:${TAG:?}
+    environment: *db-client
+    secrets: [db_user, db_password]
+    networks: [edge_public, internal]
+    stop_grace_period: 10s
+    deploy:
+      <<: *stateless
+      replicas: 3
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.comptes.loadbalancer.server.port=3000
+        - traefik.http.routers.comptes.rule=PathPrefix(`/api/comptes`)
+        - traefik.http.routers.comptes.service=comptes
+        - traefik.http.routers.comptes.middlewares=strip-api@swarm,retry@swarm
+        - traefik.http.routers.comptes-health.rule=Path(`/api/comptes/health`)
+        - traefik.http.routers.comptes-health.priority=100
+        - traefik.http.routers.comptes-health.service=comptes
+        - traefik.http.routers.comptes-health.middlewares=health@swarm,retry@swarm
+
+  publications:
+    image: ${REGISTRY:?}/nebula-publications:${TAG:?}
+    environment:
+      <<: *db-client
+      COMPTES_URL: http://comptes:3000
+      REDIS_URL_FILE: /run/secrets/redis_url
+      AMQP_URL_FILE: /run/secrets/amqp_url
+    secrets: [db_user, db_password, redis_url, amqp_url]
+    networks: [edge_public, internal]
+    stop_grace_period: 10s
+    deploy:
+      <<: *stateless
+      replicas: 3
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.publications.loadbalancer.server.port=3000
+        - traefik.http.routers.publications.rule=PathPrefix(`/api/publications`) || Path(`/api/fil`)
+        - traefik.http.routers.publications.service=publications
+        - traefik.http.routers.publications.middlewares=strip-api@swarm,retry@swarm
+        - traefik.http.routers.publications-health.rule=Path(`/api/publications/health`)
+        - traefik.http.routers.publications-health.priority=100
+        - traefik.http.routers.publications-health.service=publications
+        - traefik.http.routers.publications-health.middlewares=health@swarm,retry@swarm
+
+  worker-medias:
+    image: ${REGISTRY:?}/nebula-worker-medias:${TAG:?}
+    environment:
+      AMQP_URL_FILE: /run/secrets/amqp_url
+      SORTIE_DIR: /data
+    secrets: [amqp_url]
+    volumes: [traces:/data]
+    networks: [internal]
+    deploy:
+      <<: *stateless
+      replicas: 2
+
+  db:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: nebula
+      POSTGRES_USER_FILE: /run/secrets/db_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_user, db_password]
+    configs:
+      - { source: db_init, target: /docker-entrypoint-initdb.d/init.sql }
+    volumes:
+      - db_data:/var/lib/postgresql     # Postgres 18+ : la racine, pas /data
+    networks: [internal]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_user)\" -d nebula"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    deploy:
+      <<: *stateful
+      placement:
+        constraints: [node.labels.nebula.db == true]
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+        reservations: { memory: 256M }
+
+  cache:
+    image: redis:8.10.2-alpine
+    command: ["redis-server", "/run/secrets/redis_conf"]
+    secrets: [redis_conf]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$(sed -n 's/^requirepass //p' /run/secrets/redis_conf)\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      <<: *stateful
+      update_config: { order: start-first, failure_action: rollback, monitor: 20s }   # aucune donnee a proteger
+      placement:
+        constraints: [node.labels.nebula.db != true]
+      resources:
+        limits: { cpus: "0.25", memory: 96M }
+        reservations: { memory: 32M }
+
+  bus:
+    image: rabbitmq:4.3.6-alpine
+    hostname: bus     # nom de noeud Erlang stable (rabbit@bus) : sinon les donnees du volume sont ignorees au redemarrage
+    secrets:
+      - { source: rabbitmq_credentials, target: /etc/rabbitmq/conf.d/20-credentials.conf }
+    configs:
+      - { source: rabbitmq_conf, target: /etc/rabbitmq/conf.d/10-nebula.conf }
+      - { source: rabbitmq_definitions, target: /etc/rabbitmq/definitions.json }
+    volumes: [bus_data:/var/lib/rabbitmq]
+    networks: [internal]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      <<: *stateful
+      placement:
+        constraints: [node.labels.nebula.bus == true]
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+        reservations: { memory: 256M }
+
+networks:
+  edge_public:
+    external: true
+  internal:
+    driver: overlay
+    internal: true      # aucune sortie ni entree hors du cluster
+    driver_opts:
+      com.docker.network.driver.mtu: "1300"
+
+volumes:
+  db_data:
+  bus_data:
+  traces:
+
+# Crees par scripts/secrets-init.sh sur le manager : jamais dans le depot.
+secrets:
+  db_user: { external: true }
+  db_password: { external: true }
+  redis_conf: { external: true }
+  redis_url: { external: true }
+  rabbitmq_credentials: { external: true }
+  amqp_url: { external: true }
+
+# Les configs Swarm sont immuables : changer le fichier => incrementer le suffixe.
+configs:
+  db_init:
+    name: nebula_db_init_v1
+    file: ../db/init.sql
+  rabbitmq_conf:
+    name: nebula_rabbitmq_conf_v1
+    file: ./bus/rabbitmq.conf
+  rabbitmq_definitions:
+    name: nebula_rabbitmq_definitions_v1
+    file: ./bus/definitions.json
