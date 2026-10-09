@@ -1,91 +1,86 @@
 # Nebula - Procédures
 
-Les cinq procédures exigées (section 9 du cahier des charges), dix lignes maximum chacune, exécutables par un tiers.
+Prérequis sur le poste : alias SSH `manager`, `worker1`, `worker2` (ProxyJump `router`) et dans `/etc/hosts` : `10.210.0.39 nebula.test admin.nebula.test`.
 
-**Prérequis du poste** : alias SSH `manager`, `worker1`, `worker2` (ProxyJump `router`) ; dans `/etc/hosts` : `10.210.0.39 nebula.test admin.nebula.test` (IP WAN du routeur, qui redirige le port 80 vers le manager).
-**Sur le manager**, `~/nebula` est un lien vers le checkout du runner (`~/actions-runner/_work/nebula/nebula`), mis à jour à chaque déploiement.
-
----
+Sur le manager, `~/nebula` pointe vers le dossier du runner (`~/actions-runner/_work/nebula/nebula`).
 
 ## 1. Déploiement initial
 
 ```bash
-ssh manager docker node ls                       # 3 nœuds Ready/Active, manager Leader (sinon § 6)
-git push origin main                             # Actions « build » : construit, scanne, publie
-echo "$(cat VERSION)-$(git rev-parse --short=7 HEAD)"   # le tag publié (aussi dans le résumé du run)
-gh workflow run deploy -f tag=<tag>              # ou GitHub > Actions > deploy > Run workflow
-ssh manager "cd ~/nebula && make status"               # chaque service N/N, bon tag, bons nœuds
-make smoke HOST=nebula.test                     # depuis le poste : tout OK
+ssh manager docker node ls                       # 3 nœuds Ready
+git push origin main                             # build et publication des images
+echo "$(cat VERSION)-$(git rev-parse --short=7 HEAD)"   # tag publié
+gh workflow run deploy -f tag=<tag>
+ssh manager "cd ~/nebula && make status"
+make smoke HOST=nebula.test
 ```
 
-Direct sur le manager (secours, ou en soutenance car plus rapide : ~80 s contre ~170 s avec l'attente GitHub) : `ssh manager "cd ~/nebula && ./scripts/deploy.sh <tag>"`. Le script crée le réseau `edge_public` et les secrets manquants, déploie `edge` puis `nebula`, attend que tout soit N/N et échoue si Swarm a dû revenir en arrière.
+Sans GitHub : `ssh manager "cd ~/nebula && ./scripts/deploy.sh <tag>"`.
 
 ## 2. Mise à jour d'un service
 
 ```bash
-# terminal 2 : preuve de non-interruption (que des 200)
+# dans un autre terminal : ne doit afficher que des 200
 while :; do curl -s -o /dev/null -w '%{http_code}\n' http://nebula.test/api/comptes/health; sleep .2; done | uniq -c
-git commit -am "…" && git push                   # build publie <VERSION>-<nouveau sha7>
+git commit -am "..." && git push
 gh workflow run deploy -f tag=<nouveau-tag>
-ssh manager watch -n1 docker service ps nebula_comptes   # 1 replica à la fois, le nouveau sain avant l'arrêt de l'ancien
-curl -s http://nebula.test/api/comptes/health   # "version" = nouveau tag
+ssh manager watch -n1 docker service ps nebula_comptes
+curl -s http://nebula.test/api/comptes/health    # nouvelle version
 ```
 
 ## 3. Retour arrière
 
 ```bash
-# Automatique : une version jamais saine est annulée seule (failure_action: rollback, monitor 30 s)
+# automatique si la nouvelle version n'est jamais saine
 ssh manager docker service inspect -f '{{.UpdateStatus.State}} {{.UpdateStatus.Message}}' nebula_comptes
-ssh manager "time docker service rollback nebula_comptes"   # manuel, un service : spec précédente
-gh workflow run deploy -f tag=<tag-précédent>    # manuel, toute la stack (tags : historique des runs build)
-ssh manager "cd ~/nebula && make status"               # vérifier tag et N/N
+ssh manager docker service rollback nebula_comptes   # un service
+gh workflow run deploy -f tag=<tag-précédent>        # toute la stack
+ssh manager "cd ~/nebula && make status"
 ```
 
-## 4. Arrêt et redémarrage complets du cluster
+## 4. Arrêt et redémarrage du cluster
 
 ```bash
-ssh manager sudo poweroff   # 1. le manager d'abord : plus aucune reprogrammation pendant l'arrêt
-ssh worker2 sudo poweroff   # 2. bus
-ssh worker1 sudo poweroff   # 3. base en dernier (Postgres s'arrête proprement, 30 s de grâce)
-# Redémarrage (Proxmox) : worker1, worker2, puis manager. Docker et le runner démarrent seuls.
-ssh manager docker node ls                       # ~1 min : 3 nœuds Ready, manager Leader
-ssh manager "cd ~/nebula && make status"               # tout N/N (db et bus : 1 à 2 min)
-ssh manager "for s in comptes publications worker-medias; do docker service update -d --force nebula_\$s; done"  # si tout est sur un nœud
-make smoke HOST=nebula.test && curl -s http://nebula.test/api/comptes/1   # données d'avant présentes
+ssh manager sudo poweroff
+ssh worker2 sudo poweroff
+ssh worker1 sudo poweroff
+# redémarrer dans Proxmox : worker1, worker2, puis manager
+ssh manager docker node ls
+ssh manager "cd ~/nebula && make status"
+ssh manager "for s in comptes publications worker-medias; do docker service update -d --force nebula_\$s; done"  # rééquilibrer
+make smoke HOST=nebula.test
 ```
 
-## 5. Sauvegarde et restauration des données
+## 5. Sauvegarde et restauration
 
 ```bash
-ssh manager "cd ~/nebula && make backup"               # job Swarm pg_dump -> manager:~/nebula-backups/nebula-<date>.dump
-ssh manager ls -lh nebula-backups                # copie hors du nœud de la base
-ssh manager "cd ~/nebula && make restore FILE=\$HOME/nebula-backups/<fichier>.dump"   # -> "restauration : Complete"
-curl -s http://nebula.test/api/comptes/<id>     # la donnée sauvegardée est revenue
-# Base perdue (volume ou worker1) : étiqueter un nœud nebula.db=true, redéployer (init.sql recrée le schéma), puis restaurer.
+ssh manager "cd ~/nebula && make backup"         # ~/nebula-backups/nebula-<date>.dump
+ssh manager ls -lh nebula-backups
+ssh manager "cd ~/nebula && make restore FILE=\$HOME/nebula-backups/<fichier>.dump"
+curl -s http://nebula.test/api/comptes/<id>
 ```
 
----
+Si worker1 est perdu : mettre le label `nebula.db=true` sur un autre nœud, redéployer, puis restaurer.
 
-## 6. Reconstruire le cluster depuis zéro
+## 6. Reconstruire le cluster
 
 ```bash
-# Proxmox : 3 VM Debian 13 (Cloud-Init) manager .239, worker1 .240, worker2 .241, passerelle 10.96.2.254
-for h in manager worker1 worker2; do ssh $h 'bash -s' < cluster/install-docker.sh; done   # Docker 29.8.2, MTU, journaux
-./cluster/swarm-bootstrap.sh                     # init, join, étiquettes, ingress MTU 1300 ; idempotent (relancer = réparer)
-# Runner : GitHub > Settings > Actions > Runners > New (label nebula-manager) ; sudo ./svc.sh install && start
-# Après le 1er déploiement : ssh manager ln -sfn ~/actions-runner/_work/nebula/nebula ~/nebula
-# Secret de dépôt GHCR_PULL_TOKEN = PAT read:packages ; puis procédure 1
+# Proxmox : 3 VM Debian 13, .239, .240, .241, passerelle 10.96.2.254
+for h in manager worker1 worker2; do ssh $h 'bash -s' < cluster/install-docker.sh; done
+./cluster/swarm-bootstrap.sh
+# runner : GitHub > Settings > Actions > Runners > New (label nebula-manager), puis sudo ./svc.sh install && sudo ./svc.sh start
+# après le premier déploiement : ssh manager ln -sfn ~/actions-runner/_work/nebula/nebula ~/nebula
+# secret GHCR_PULL_TOKEN (PAT read:packages), puis procédure 1
 ```
 
-## 7. Ajouter un service (scénario 10, < 10 min)
+## 7. Ajouter un service
 
-1. Image : soit une image publique (ex. `traefik/whoami:v1.12.0`), soit un dossier `services/<nom>/` avec un `Dockerfile` (la CI le construit sans modification).
-2. Ajouter un bloc dans `swarm/stack.nebula.yml` sans toucher aux autres :
+Ajouter un bloc dans `swarm/stack.nebula.yml` :
 
 ```yaml
   notifications:
-    image: traefik/whoami:v1.12.0          # ou ${REGISTRY:?}/nebula-notifications:${TAG:?}
-    networks: [edge_public]                # + internal s'il parle à db/cache/bus
+    image: traefik/whoami:v1.12.0
+    networks: [edge_public]
     deploy:
       <<: *stateless
       replicas: 2
@@ -96,15 +91,17 @@ for h in manager worker1 worker2; do ssh $h 'bash -s' < cluster/install-docker.s
         - traefik.http.routers.notifications.middlewares=strip-api@swarm,retry@swarm
 ```
 
-3. `git push` puis `gh workflow run deploy -f tag=<tag>` → `curl http://nebula.test/api/notifications`.
+Puis `git push`, `gh workflow run deploy -f tag=<tag>` et `curl http://nebula.test/api/notifications`.
 
-## Diagnostic rapide
+Pour une image maison, créer `services/<nom>/` avec un `Dockerfile` : la CI le construit.
 
-| Question | Commande (sur le manager) |
+## Commandes utiles (sur le manager)
+
+| Besoin | Commande |
 |---|---|
-| Qui dirige, nœuds prêts ? | `docker node ls` |
-| Quoi, quelle version, où, combien ? | `make status` |
-| Pourquoi une tâche ne démarre pas ? | `docker service ps --no-trunc nebula_<svc>` |
-| Journaux d'un service / d'une instance | `docker service logs -f nebula_<svc>` / `docker service logs <id-tâche>` |
-| Messages en erreur du bus | `ssh worker2 'docker exec $(docker ps -qf name=nebula_bus) rabbitmqctl list_queues name messages'` |
-| Mot de passe du tableau de bord | `cat ~/.nebula/admin-password` → `http://admin.nebula.test/dashboard/` (user `admin`) |
+| État des nœuds | `docker node ls` |
+| Services et versions | `make status` |
+| Tâche qui ne démarre pas | `docker service ps --no-trunc nebula_<svc>` |
+| Logs | `docker service logs -f nebula_<svc>` |
+| Files du bus | `ssh worker2 'docker exec $(docker ps -qf name=nebula_bus) rabbitmqctl list_queues name messages'` |
+| Mot de passe admin | `cat ~/.nebula/admin-password` |
