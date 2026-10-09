@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Verifie la chaine complete : edge -> comptes -> publications -> bus -> worker.
-#   ./scripts/smoke.sh [hote]        (defaut : nebula.test)
+# Usage : ./scripts/smoke.sh [hote]
 set -euo pipefail
 B="http://${1:-nebula.test}/api"
 ok=0

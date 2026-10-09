@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Restaure une sauvegarde produite par db-backup.sh (ecrase les tables existantes).
-#   ./scripts/db-restore.sh ~/nebula-backups/nebula-<date>.dump
+# Usage : ./scripts/db-restore.sh ~/nebula-backups/<fichier>.dump (ecrase les tables)
 set -euo pipefail
 SRC=$(realpath "${1:?usage: db-restore.sh <fichier.dump>}")
 test -s "$SRC"

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Sauvegarde logique de la base vers le manager (hors du noeud de la base).
-#   ./scripts/db-backup.sh            -> ~/nebula-backups/nebula-<date>.dump
+# Sauvegarde la base dans ~/nebula-backups sur le manager.
 set -euo pipefail
 DIR=${BACKUP_DIR:-$HOME/nebula-backups}
 FICHIER=nebula-$(date +%Y%m%d-%H%M%S).dump

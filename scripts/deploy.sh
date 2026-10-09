@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Deploie (ou met a jour) edge + nebula avec un tag d'image deja publie.
-#   ./scripts/deploy.sh 1.0.0-a1b2c3d        (sur le manager)
-# Ne construit rien : c'est l'image testee par la CI qui part en production.
+# Usage (sur le manager) : ./scripts/deploy.sh 1.0.0-a1b2c3d
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export TAG=${1:?usage: deploy.sh <tag>}
@@ -16,8 +14,7 @@ docker stack deploy --detach=false -c swarm/stack.edge.yml edge
 DEBUT=$(date +%s)
 docker stack deploy --detach=true --with-registry-auth -c swarm/stack.nebula.yml nebula
 
-# --detach=false verifie les services un par un (~30 s chacun) : on attend plutot qu'ils
-# soient tous N/N ET qu'aucune mise a jour ne soit en cours (pendant un start-first, l'ancienne version affiche deja N/N).
+# --detach=false attend les services un par un ; pendant un start-first l'ancienne version affiche deja N/N
 etats() {
   docker service ls -q --filter label=com.docker.stack.namespace=nebula | xargs docker service inspect \
     --format '{{.Spec.Name}} {{if .UpdateStatus}}{{.UpdateStatus.State}} {{.UpdateStatus.StartedAt.Unix}}{{end}}'

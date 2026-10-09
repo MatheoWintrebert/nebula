@@ -1,5 +1,4 @@
-# Scenario 8 : publie une version volontairement defectueuse de comptes
-# (meme code, sonde de sante toujours en echec) pour demontrer le retour arriere.
+# Scenario 8 : image comptes dont le healthcheck echoue toujours.
 name: defect
 
 on:

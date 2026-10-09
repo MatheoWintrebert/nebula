@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Installe Docker Engine sur une VM Debian 13 fraiche. A lancer sur CHAQUE noeud :
-#   ssh manager 'bash -s' < cluster/install-docker.sh
+# Usage, sur chaque noeud : ssh manager 'bash -s' < cluster/install-docker.sh
 set -euo pipefail
 VERSION=5:29.8.2-1~debian.13~trixie
 
@@ -18,7 +17,7 @@ SRC
 sudo apt-get update -q
 sudo apt-get install -yq "docker-ce=$VERSION" "docker-ce-cli=$VERSION" containerd.io
 
-# MTU du reseau Proxmox = 1350 : les ponts locaux s'alignent, les overlays prennent 1300 (VXLAN = 50 octets).
+# le reseau Proxmox est a 1350
 sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
 { "mtu": 1350, "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
 JSON

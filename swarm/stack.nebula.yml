@@ -1,21 +1,9 @@
-# ===========================================================================
-# NEBULA : services applicatifs et dependances d'infrastructure.
-#
-#   ./scripts/deploy.sh <tag>        (tag = <VERSION>-<sha7>, jamais latest)
-#
-# Conventions (ajouter un service = copier un bloc, rien d'autre a toucher) :
-#   - image   ${REGISTRY}/nebula-<service>:${TAG}
-#   - reseaux edge_public (seulement si routé par Traefik) + internal
-#   - route   /api/<service>...  ->  strip-api ; sante /api/<service>/health
-#   - deploy  <<: *stateless  (mise a jour progressive + retour arriere)
-# ===========================================================================
-
 x-stateless: &stateless
   restart_policy: { condition: any, delay: 5s }
   update_config:
     parallelism: 1
     delay: 5s
-    order: start-first        # le nouveau replica doit etre sain avant l'arret de l'ancien
+    order: start-first
     failure_action: rollback
     monitor: 30s
     max_failure_ratio: 0
@@ -24,13 +12,13 @@ x-stateless: &stateless
     order: start-first
     monitor: 10s
   placement:
-    constraints: [node.labels.nebula.db != true]   # la machine de la base lui reste reservee
+    constraints: [node.labels.nebula.db != true]
     preferences: [{ spread: node.id }]
   resources:
     limits: { cpus: "0.50", memory: 128M }
     reservations: { memory: 48M }
 
-# Un seul replica sur un volume local : on arrete l'ancien AVANT de demarrer le nouveau.
+# un seul ecrivain sur le volume
 x-stateful: &stateful
   replicas: 1
   restart_policy: { condition: any, delay: 5s }
@@ -109,7 +97,7 @@ services:
     configs:
       - { source: db_init, target: /docker-entrypoint-initdb.d/init.sql }
     volumes:
-      - db_data:/var/lib/postgresql     # Postgres 18+ : la racine, pas /data
+      - db_data:/var/lib/postgresql     # Postgres 18 : la racine, pas /data
     networks: [internal]
     stop_grace_period: 30s
     healthcheck:
@@ -138,7 +126,7 @@ services:
       retries: 3
     deploy:
       <<: *stateful
-      update_config: { order: start-first, failure_action: rollback, monitor: 20s }   # aucune donnee a proteger
+      update_config: { order: start-first, failure_action: rollback, monitor: 20s }
       placement:
         constraints: [node.labels.nebula.db != true]
       resources:
@@ -147,7 +135,7 @@ services:
 
   bus:
     image: rabbitmq:4.3.6-alpine
-    hostname: bus     # nom de noeud Erlang stable (rabbit@bus) : sinon les donnees du volume sont ignorees au redemarrage
+    hostname: bus     # sinon RabbitMQ ignore son volume au redemarrage
     secrets:
       - { source: rabbitmq_users, target: /etc/rabbitmq/definitions/20-users.json }
     configs:
@@ -175,7 +163,7 @@ networks:
     external: true
   internal:
     driver: overlay
-    internal: true      # aucune sortie ni entree hors du cluster
+    internal: true
     driver_opts:
       com.docker.network.driver.mtu: "1300"
 
@@ -184,7 +172,7 @@ volumes:
   bus_data:
   traces:
 
-# Crees par scripts/secrets-init.sh sur le manager : jamais dans le depot.
+# crees par scripts/secrets-init.sh
 secrets:
   db_user: { external: true }
   db_password: { external: true }
@@ -193,7 +181,7 @@ secrets:
   rabbitmq_users: { external: true }
   amqp_url: { external: true }
 
-# Les configs Swarm sont immuables : changer le fichier => incrementer le suffixe.
+# configs immuables : changer le fichier = changer le suffixe
 configs:
   db_init:
     name: nebula_db_init_v1

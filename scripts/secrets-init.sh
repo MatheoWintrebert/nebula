@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Cree les secrets Swarm manquants avec des valeurs aleatoires. Idempotent.
-# A lancer sur le manager. Aucune valeur n'est ecrite dans le depot.
+# Cree les secrets Swarm manquants (sur le manager).
 set -euo pipefail
 
 existe() { docker secret inspect "$1" >/dev/null 2>&1; }
 cree() { printf '%s' "$2" | docker secret create "$1" - >/dev/null; echo "secret $1 cree"; }
 alea() { openssl rand -hex 24; }
 
-# Chaque groupe partage une meme valeur : on le cree en entier ou pas du tout.
+# les secrets d'un groupe partagent un mot de passe
 groupe() {
   local present=0 total=$#
   for s in "$@"; do existe "$s" && present=$((present + 1)); done
@@ -28,7 +27,7 @@ if groupe redis_conf redis_url; then
   cree redis_url "redis://:$pw@cache:6379"
 fi
 
-# RabbitMQ n'importe que des empreintes : sel de 4 octets + SHA-256(sel + mot de passe), en base64.
+# format RabbitMQ : base64(sel + sha256(sel + mot de passe))
 utilisateurs_rabbitmq() {
   PW=$1 python3 - <<'PY'
 import base64, hashlib, json, os

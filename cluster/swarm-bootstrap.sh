@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Forme le cluster depuis le poste d'administration (alias SSH manager, worker1, worker2).
-# Idempotent : relancer le script termine ou repare une installation partielle.
-#   ./cluster/swarm-bootstrap.sh
+# Forme le cluster depuis le poste. Peut etre relance sans risque.
 set -euo pipefail
 MANAGER_IP=10.96.2.239
 
@@ -17,8 +15,7 @@ done
 ssh manager 'docker node update --label-add nebula.db=true worker1 >/dev/null &&
   docker node update --label-add nebula.bus=true worker2 >/dev/null'
 
-# Le reseau ingress par defaut herite du MTU 1500 : on le recree a 1300 avant tout service.
-# « network rm » rend la main avant la fin de la suppression : on attend qu'il ait disparu.
+# ingress est a 1500 par defaut ; network rm rend la main avant la fin de la suppression
 ssh manager 'set -e
   mtu=absent
   if docker network inspect ingress >/dev/null 2>&1; then
